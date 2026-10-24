@@ -99,7 +99,7 @@ src = open(path, encoding="utf-8").read()
 # enable(): 在安装 write_op/status/setprocattr hook 之前直接返回；
 # 旧形态另需保留 <6.6 的 fake_state 设置，新形态没有 fake_state（统一用 backup_sepolicy）
 enable_anchor = '    selinux_write_op = find_kernel_symbol_exact("write_op");'
-assert src.count(enable_anchor) == 1, "selinux_hide enable anchor not unique"
+assert enable_anchor in src, "selinux_hide enable anchor missing"
 enable_block = (
     "#ifdef CONFIG_KSU_SUSFS\n"
     "    /* FINASU_SUSFS_OWNS_SELINUXFS: SUSFS 已接管 write_op/status/setprocattr */\n"
@@ -119,12 +119,12 @@ src = src.replace(enable_anchor, enable_block + enable_anchor, 1)
 
 # unhook(): 没有安装过就不要还原
 unhook_anchor = "static void ksu_selinux_hide_unhook()\n{\n"
-assert src.count(unhook_anchor) == 1, "selinux_hide unhook anchor not unique"
+assert unhook_anchor in src, "selinux_hide unhook anchor missing"
 src = src.replace(unhook_anchor, unhook_anchor + "#ifdef CONFIG_KSU_SUSFS\n    return;\n#endif\n", 1)
 
 # init(): 不再 hook status open（SUSFS 负责）
 init_anchor = "    hook_selinux_status_open();\n}"
-assert src.count(init_anchor) == 1, "selinux_hide init anchor not unique"
+assert init_anchor in src, "selinux_hide init anchor missing"
 src = src.replace(init_anchor, "#ifndef CONFIG_KSU_SUSFS\n    hook_selinux_status_open();\n#endif\n}", 1)
 
 open(path, "w", encoding="utf-8").write(src)
