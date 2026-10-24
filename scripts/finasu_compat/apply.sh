@@ -361,7 +361,7 @@ KSU_KBUILD_EOF
   for sym in ksu_handle_sys_read ksu_handle_vfs_fstat ksu_handle_sys_reboot ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
     for f in "$FINASU_KSU/runtime/ksud_integration.c" "$FINASU_KSU/supercall/dispatch.c"; do
       if [ -f "$f" ]; then
-        sed -i "s|^\([a-zA-Z_][a-zA-Z0-9_ ]*\)$sym(|\1 __weak $sym(|" "$f"
+        sed -i "s|^\([a-zA-Z_][a-zA-Z0-9_ ]*\)$sym\([ (]|\1 __weak $sym\2|" "$f"
       fi
     done
   done
