@@ -357,6 +357,16 @@ KSU_KBUILD_EOF
     echo "adb_root.c: 已从编译列表移除（SUSFS 补丁引用不匹配）"
   fi
 
+  # 0i) SUSFS 与 KSU 侧重复定义的 hook 符号：KSU 侧弱化，链接时由 SUSFS 强符号接管
+  for sym in ksu_handle_sys_read ksu_handle_vfs_fstat ksu_handle_sys_reboot ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
+    for f in "$FINASU_KSU/runtime/ksud_integration.c" "$FINASU_KSU/supercall/dispatch.c"; do
+      if [ -f "$f" ]; then
+        sed -i "s|^\([a-zA-Z_][a-zA-Z0-9_ ]*\)$sym(|\1 __weak $sym(|" "$f"
+      fi
+    done
+  done
+  echo "hook 符号已弱化（KSU 侧），链接由 SUSFS 接管"
+
   # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
   true
   if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
