@@ -351,6 +351,12 @@ KSU_KBUILD_EOF
     echo "sucompat.c: argv_user 已按 SUSFS 新签名强转"
   fi
 
+  # 0h) SUSFS 补丁对 adb_root.c 的引用与 FinaSU v1.0.7 新形态不匹配（envp_user_ptr/escape_with_root_profile/execveat），移除该编译单元
+  if grep -q 'adb_root\.o' "$FINASU_KSU/Kbuild"; then
+    sed -i '/adb_root\.o/d' "$FINASU_KSU/Kbuild"
+    echo "adb_root.c: 已从编译列表移除（SUSFS 补丁引用不匹配）"
+  fi
+
   # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
   true
   if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
