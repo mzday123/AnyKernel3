@@ -345,6 +345,12 @@ KSU_KBUILD_EOF
     NEW_MODEL=1
   fi
 
+  # 0g) sucompat.c 适配：SUSFS 补丁把 sulog 捕获签名改为 struct user_arg_ptr *
+  if grep -q 'ksu_sulog_capture_sucompat(\*filename_user, argv_user, GFP_KERNEL)' "$FINASU_KSU/feature/sucompat.c"; then
+    sed -i 's|ksu_sulog_capture_sucompat(\*filename_user, argv_user, GFP_KERNEL)|ksu_sulog_capture_sucompat(*filename_user, (struct user_arg_ptr *)argv_user, GFP_KERNEL)|' "$FINASU_KSU/feature/sucompat.c"
+    echo "sucompat.c: argv_user 已按 SUSFS 新签名强转"
+  fi
+
   # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
   true
   if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
