@@ -45,7 +45,7 @@ if [ "$KSU_VARIANT" == "FinaSU" ]; then
   fi
   if ! grep -q 'hook/lsm_hook.o' "$FINASU_KSU/Kbuild" \
     || ! grep -q 'infra/symbol_resolver.o' "$FINASU_KSU/Kbuild" \
-    || ! grep -q 'ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr' "$FINASU_KSI"
+    || ! grep -q 'ksu_handle_execveat_ksud(int *fd, struct filename **filename_ptr' "$FINASU_KSI"; then
     sed -i 's|^kernelsu-objs += hook/setuid_hook.o$|kernelsu-objs += hook/setuid_hook.o\nkernelsu-objs += hook/lsm_hook.o\nkernelsu-objs += infra/symbol_resolver.o\n\nifeq ($(CONFIG_ARM64),y)\nkernelsu-objs += hook/arm64/patch_memory.o\nelse ifeq ($(CONFIG_X86_64),y)\nkernelsu-objs += hook/x86_64/patch_memory.o\nelse ifeq ($(CONFIG_RISCV),y)\nkernelsu-objs += hook/riscv64/patch_memory.o\nendif|' "$FINASU_KSU/Kbuild"
   fi
 
