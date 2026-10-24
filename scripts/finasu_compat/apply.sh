@@ -59,7 +59,7 @@ if [ "$KSU_VARIANT" == "FinaSU" ]; then
   #       security_context_to_sid_with_policy / security_sid_to_context_with_policy /
   #       security_compute_av_user_with_policy
   FINASU_SELINUX_HIDE="$FINASU_KSU/feature/selinux_hide.c"
-  if grep -q '^static bool ksu_selinux_hide_enabled ' "$FINASU_SELINUX_HIDE"; then
+  if grep -q 'ksu_selinux_hide_enabled' "$FINASU_SELINUX_HIDE"; then
     sed -i \
       -e 's|^static bool ksu_selinux_hide_enabled |bool ksu_selinux_hide_enabled |' \
       -e 's|^static bool ksu_selinux_hide_running |bool ksu_selinux_hide_running |' \
