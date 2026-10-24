@@ -122,10 +122,10 @@ unhook_anchor = "static void ksu_selinux_hide_unhook()\n{\n"
 assert unhook_anchor in src, "selinux_hide unhook anchor missing"
 src = src.replace(unhook_anchor, unhook_anchor + "#ifdef CONFIG_KSU_SUSFS\n    return;\n#endif\n", 1)
 
-# init(): 不再 hook status open（SUSFS 负责）
-init_anchor = "    hook_selinux_status_open();\n}"
-assert init_anchor in src, "selinux_hide init anchor missing"
-src = src.replace(init_anchor, "#ifndef CONFIG_KSU_SUSFS\n    hook_selinux_status_open();\n#endif\n}", 1)
+# init(): 不再 hook status open（SUSFS 负责）——anchor 随 FinaSU 版本漂移，改为替换所有调用
+call = "    hook_selinux_status_open();\n"
+if call in src:
+    src = src.replace(call, "#ifndef CONFIG_KSU_SUSFS\n" + call + "#endif\n")
 
 open(path, "w", encoding="utf-8").write(src)
 print("selinux_hide.c: 已按 SUSFS 归属跳过 KSU 侧运行时 hook")
