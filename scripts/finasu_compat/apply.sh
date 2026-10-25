@@ -369,23 +369,20 @@ KSU_KBUILD_EOF
 
   
   
+  
   # 0j) SUSFS 补丁部分应用破坏了 FinaSU input hook 代码块（定义被删/引用残留，编译报 undeclared）
-  #     先 dump 实际结构到日志，再按 fallback 链鲁棒删除整个 input hook 区域
-  echo "=== INPUT HOOK DUMP (ksud_integration.c 530-670) ==="
-  sed -n '530,670p' "$FINASU_KSU/runtime/ksud_integration.c"
-  echo "=== END DUMP ==="
+  #     按 fallback 链鲁棒删除整个 input hook 区域（ksu_handle_vfs_fstat → ksu_stop_input_hook_runtime）
   python3 - "$FINASU_KSU/runtime/ksud_integration.c" << 'PYEOF'
 import sys, re
 p = sys.argv[1]
 s = open(p, encoding='utf-8', errors='ignore').read()
 orig = s
 starts = [
-    "static long (*orig_sys_read)",
-    "static long (*orig_sys_fstat)",
+    "ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr)",
+    "void __weak ksu_handle_vfs_fstat(",
+    "ksu_handle_vfs_fstat(",
     "static long ksu_sys_read(",
-    "static int ksu_sys_read(",
-    "static long ksu_sys_fstat(",
-    "static int ksu_sys_fstat(",
+    "static long (*orig_sys_read)",
 ]
 start = -1
 for m in starts:
@@ -426,7 +423,6 @@ if start != -1 and end != -1 and start < end:
 else:
     print("WARN: markers not found (start=%d end=%d)" % (start, end))
 PYEOF
-  
   # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
   true
   if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
