@@ -364,11 +364,11 @@ KSU_KBUILD_EOF
   
   # 0i) SUSFS 与 KSU 侧重复符号：函数定义弱化 + static key 定义转 extern（TRUE/FALSE 形态，susfs.c 定义保留）
   echo "=== HOOK SYMBOL DEFINITIONS ==="
-  find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -n "ksu_is_input_hook_enabled\|ksu_is_init_rc_hook_enabled" 2>/dev/null | grep -v "Binary" | grep -v "static_key_enabled\|static_branch_" | head -20
+  find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -n "ksu_is_input_hook_enabled\|ksu_is_init_rc_hook_enabled" 2>/dev/null | grep -v "Binary" | grep -v "static_key_enabled\|static_branch_" | head -20
   echo "=== END DEFINITIONS ==="
   # 1) static key 定义转 extern（TRUE/FALSE 形态，排除 susfs.c）
   for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
-    for f in $(find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
+    for f in $(find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
       case "$f" in
         *extension/susfs.c) echo "skip susfs.c 定义保留: $f" ;;
         *)
@@ -382,7 +382,7 @@ KSU_KBUILD_EOF
   done
   # 2) 函数定义弱化（__weak）
   for sym in ksu_handle_sys_read ksu_handle_sys_reboot; do
-    for f in $(find "$FINASU_KSU" -name "*.c" -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
+    for f in $(find "$(dirname "$FINASU_KSU")" -name "*.c" -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
       sed -i "s|^\([a-zA-Z_][a-zA-Z0-9_ ]*\)$sym\([^a-zA-Z0-9_]\)|\1 __weak $sym\2|" "$f" 2>/dev/null
     done
   done
@@ -446,7 +446,7 @@ PYEOF
   
   # 0j2) 0j 删除后：清理残留 static key 定义（KSU 侧 TRUE/FALSE 任何形态 → extern，susfs.c 保留）
   for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
-    for f in $(find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
+    for f in $(find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
       case "$f" in
         *extension/susfs.c) continue ;;
       esac
