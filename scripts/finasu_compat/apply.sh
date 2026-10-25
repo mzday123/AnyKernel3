@@ -358,17 +358,17 @@ KSU_KBUILD_EOF
   fi
 
   
-  # 0i) SUSFS 与 KSU 侧重复定义的 hook 符号：KSU 侧全部弱化（覆盖所有 .c，含 = 初始化形态），链接时由 SUSFS 强符号接管
+  
+  # 0i) SUSFS 与 KSU 侧重复定义的 hook 符号：KSU 侧全部弱化（find 遍历所有 .c），链接时由 SUSFS 强符号接管
   echo "=== HOOK SYMBOL DEFINITIONS ==="
-  grep -rn --include='*.c' "ksu_is_input_hook_enabled\|ksu_is_init_rc_hook_enabled\|ksu_handle_sys_read\|ksu_handle_vfs_fstat\|ksu_handle_sys_reboot" "$FINASU_KSU" 2>/dev/null | grep -v "Binary" | head -30
+  find "$FINASU_KSU" -name "*.c" -type f 2>/dev/null | xargs grep -n "ksu_is_input_hook_enabled\|ksu_is_init_rc_hook_enabled\|ksu_handle_sys_read\|ksu_handle_vfs_fstat\|ksu_handle_sys_reboot" 2>/dev/null | grep -v "Binary" | head -40
   echo "=== END DEFINITIONS ==="
   for sym in ksu_handle_sys_read ksu_handle_vfs_fstat ksu_handle_sys_reboot ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
-    for f in $(grep -rl --include='*.c' "$sym" "$FINASU_KSU" 2>/dev/null); do
+    for f in $(find "$FINASU_KSU" -name "*.c" -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
       sed -i "s|^\([a-zA-Z_][a-zA-Z0-9_ ]*\)$sym\([^a-zA-Z0-9_]\)|\1 __weak $sym\2|" "$f" 2>/dev/null
     done
   done
-  echo "hook 符号已弱化（KSU 侧全部 .c），链接由 SUSFS 接管"
-  
+  echo "hook 符号已弱化（KSU 侧全部 .c），链接由 SUSFS 接管"  
   
   
   
