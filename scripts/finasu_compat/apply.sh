@@ -405,6 +405,14 @@ KSU_KBUILD_EOF
   done
   echo "0j) 原版 ksud_integration.c + ksu.h 恢复 + static key extern 完成"
 
+  # 0j5) event.h（补丁版保留）函数原型中的 struct user_arg_ptr 需全局前向声明：
+  #      参数内声明的 struct 仅函数原型作用域可见，与 ksu.h 完整定义被视为不同类型 → 指针不兼容（round5c）
+  EVENT_H="$FINASU_KSU/sulog/event.h"
+  if [ -f "$EVENT_H" ] && ! grep -q '^struct user_arg_ptr;' "$EVENT_H"; then
+    sed -i '0,/ksu_sulog_capture_sucompat/{s//struct user_arg_ptr;\n&/}' "$EVENT_H" 2>/dev/null || true
+    echo "0j5) event.h 已补 struct user_arg_ptr 全局前向声明"
+  fi
+
   
   # 0j4) 为 SUSFS 引用的已移除 adb_root 符号提供桩定义（0h 已移除 adb_root 编译；input hook 原版保留，无需 ksu_syscall_table 桩）
   SUSFS_FILE="$FINASU_KSU/extension/susfs.c"
