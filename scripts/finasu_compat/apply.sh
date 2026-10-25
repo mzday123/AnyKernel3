@@ -422,6 +422,35 @@ void ksu_stop_ksud_execve_hook(void) {}
 EOF
   grep -q 'hook/ksu_hook_stubs.o' "$FINASU_KSU/Kbuild" || echo 'kernelsu-objs += hook/ksu_hook_stubs.o' >> "$FINASU_KSU/Kbuild"
   echo "0l) ksu_hook_* 存根已注入"
+
+  # 0m) 10_enable 补丁的 Kconfig hunks 被 reject → KSU 的 Kconfig 无 KSU_SUSFS 选项，
+  #     注入到 gki_defconfig 的 CONFIG_KSU_SUSFS=y 被内核当未知选项丢弃（/proc/config.gz: not set）。
+  #     手动补上 SUSFS Kconfig 选项，让 susfs.c 真正编译进内核。
+  KSU_KCFG="$(find "$KERNEL_ROOT/$KSU_DIR" -maxdepth 2 -name Kconfig 2>/dev/null | head -1)"
+  echo "0m) KSU Kconfig: $KSU_KCFG"
+  if [ -n "$KSU_KCFG" ] && ! grep -q 'config KSU_SUSFS' "$KSU_KCFG"; then
+    cat >> "$KSU_KCFG" <<'EOF'
+
+config KSU_SUSFS
+	bool "KernelSU - SUSFS support"
+	default y
+
+config KSU_SUSFS_HAS_MAGIC_MOUNT
+	bool "SUSFS magic mount"
+	default y
+
+config KSU_SUSFS_SUS_PATH
+	bool "SUSFS sus_path"
+	default y
+
+config KSU_SUSFS_ENABLE_LOG
+	bool "SUSFS enable log"
+	default y
+EOF
+    echo "0m) KSU_SUSFS Kconfig 选项已补上"
+  else
+    echo "0m) Kconfig 已有 KSU_SUSFS 或未找到 Kconfig"
+  fi
   # 0j7) 把 ksud_integration.c / init.c 等原版文件里的 static key 定义统一转 extern（定义由 susfs.c 提供）。
   #      sed 版本曾漏转（round13 链接 duplicate），改用 python 正则（支持 DEFINE 宏与 struct 变量两种写法）
 python3 - "$FINASU_KSU" <<'PYEOF'
