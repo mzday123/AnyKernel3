@@ -397,6 +397,7 @@ python3 - "$FINASU_KSU" <<'PYEOF'
 import sys, os, re
 root = os.path.dirname(sys.argv[1])
 syms = ['ksu_is_input_hook_enabled', 'ksu_is_init_rc_hook_enabled']
+converted = []
 for dirpath, _, files in os.walk(root):
     for fn in files:
         if not (fn.endswith('.c') or fn.endswith('.h')):
@@ -410,15 +411,28 @@ for dirpath, _, files in os.walk(root):
             continue
         orig = src
         for sym in syms:
-            src = re.sub(r'^[ \t]*DEFINE_STATIC_KEY_(TRUE|FALSE)\(\s*%s\s*\)\s*;' % re.escape(sym),
-                         r'extern struct static_key_\1 %s;' % sym, src, flags=re.M)
-            src = re.sub(r'^[ \t]*struct static_key_(true|false)\s+%s\s*=[^;]*;' % re.escape(sym),
-                         r'extern struct static_key_\1 %s;' % sym, src, flags=re.M)
+            out = []
+            for line in src.split('\n'):
+                st = line.strip()
+                m = re.match(r'DEFINE_STATIC_KEY_(TRUE|FALSE)\(\s*%s\s*\)\s*;?' % re.escape(sym), st)
+                typ = None
+                if m:
+                    typ = 'true' if m.group(1) == 'TRUE' else 'false'
+                else:
+                    m2 = re.match(r'struct static_key_(true|false)\s+%s\s*(=[^;]*)?;?' % re.escape(sym), st)
+                    if m2:
+                        typ = m2.group(1)
+                if typ:
+                    out.append('extern struct static_key_%s %s;' % (typ, sym))
+                else:
+                    out.append(line)
+            src = '\n'.join(out)
         if src != orig:
             open(p, 'w', encoding='utf-8', newline='\n').write(src)
-            print('0j7) static key extern: %s' % os.path.relpath(p, root))
+            converted.append(os.path.relpath(p, root))
+print('0j7) converted: ' + ('; '.join(converted) if converted else 'NONE'))
 PYEOF
-  echo "0j) 原版 ksud_integration.c + ksu.h 恢复 + static key extern（python）完成"
+  echo "0j) 原版 ksud_integration.c + ksu.h 恢复 + static key extern（python 行级）完成"
 
   # 0j5) event.h（补丁版保留）函数原型中的 struct user_arg_ptr 需全局前向声明：
   #      参数内声明的 struct 仅函数原型作用域可见，与 ksu.h 完整定义被视为不同类型 → 指针不兼容（round5c）
