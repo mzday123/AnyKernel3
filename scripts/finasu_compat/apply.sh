@@ -440,7 +440,18 @@ if start != -1 and end != -1 and start < end:
 else:
     print("WARN: markers not found (start=%d end=%d)" % (start, end))
 PYEOF
-  # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
+
+  # 0j2) 0j 删除后：清理残留 static key 定义（KSU 侧任何形态 → extern，susfs.c 保留）
+  for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
+    for f in $(find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
+      case "$f" in
+        *extension/susfs.c) continue ;;
+      esac
+      sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE($sym);\?|extern struct static_key_false $sym;|" "$f" 2>/dev/null
+      sed -i "s|^[ \t]*struct static_key_false $sym[^;]*;|extern struct static_key_false $sym;|" "$f" 2>/dev/null
+    done
+  done
+  echo "post-0j static key 清理完成"  # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
   true
   if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
     echo "::error::FinaSU selinux_hide.c 的 security_*_with_policy 仍未全局化（6.6 会链接失败）" >&2
