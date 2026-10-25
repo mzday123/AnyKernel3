@@ -361,18 +361,21 @@ KSU_KBUILD_EOF
   
   
   
-  # 0i) SUSFS 与 KSU 侧重复符号：函数定义弱化 + static key 定义转 extern（susfs.c 定义保留）
+  
+  # 0i) SUSFS 与 KSU 侧重复符号：函数定义弱化 + static key 定义转 extern（TRUE/FALSE 形态，susfs.c 定义保留）
   echo "=== HOOK SYMBOL DEFINITIONS ==="
-  find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -n "DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled\|DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled\|struct static_key_false ksu_is_input_hook_enabled\|struct static_key_false ksu_is_init_rc_hook_enabled" 2>/dev/null | grep -v "Binary" | head -20
+  find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -n "ksu_is_input_hook_enabled\|ksu_is_init_rc_hook_enabled" 2>/dev/null | grep -v "Binary" | grep -v "static_key_enabled\|static_branch_" | head -20
   echo "=== END DEFINITIONS ==="
-  # 1) static key 定义转 extern（排除 susfs.c）
+  # 1) static key 定义转 extern（TRUE/FALSE 形态，排除 susfs.c）
   for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
-    for f in $(find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "DEFINE_STATIC_KEY_FALSE($sym)\|struct static_key_false $sym;" 2>/dev/null); do
+    for f in $(find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
       case "$f" in
         *extension/susfs.c) echo "skip susfs.c 定义保留: $f" ;;
         *)
+          sed -i "s|^[ \t]*DEFINE_STATIC_KEY_TRUE($sym);\?|extern struct static_key_true $sym;|" "$f" 2>/dev/null
           sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE($sym);\?|extern struct static_key_false $sym;|" "$f" 2>/dev/null
-          sed -i "s|^[ \t]*struct static_key_false $sym;|extern struct static_key_false $sym;|" "$f" 2>/dev/null
+          sed -i "s|^[ \t]*struct static_key_true $sym[^;]*;|extern struct static_key_true $sym;|" "$f" 2>/dev/null
+          sed -i "s|^[ \t]*struct static_key_false $sym[^;]*;|extern struct static_key_false $sym;|" "$f" 2>/dev/null
           ;;
       esac
     done
@@ -384,7 +387,6 @@ KSU_KBUILD_EOF
     done
   done
   echo "hook 符号已处理（函数弱化 + static key extern），链接由 SUSFS 接管"  
-  
   # 0j) SUSFS 补丁部分应用破坏了 FinaSU input hook 代码块（定义被删/引用残留，编译报 undeclared）
   #     按 fallback 链鲁棒删除整个 input hook 区域（ksu_handle_vfs_fstat 行首 → ksu_stop_input_hook_runtime 函数体结束）
   python3 - "$FINASU_KSU/runtime/ksud_integration.c" << 'PYEOF'
@@ -441,18 +443,20 @@ else:
     print("WARN: markers not found (start=%d end=%d)" % (start, end))
 PYEOF
 
-  # 0j2) 0j 删除后：清理残留 static key 定义（KSU 侧任何形态 → extern，susfs.c 保留）
+  
+  # 0j2) 0j 删除后：清理残留 static key 定义（KSU 侧 TRUE/FALSE 任何形态 → extern，susfs.c 保留）
   for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
     for f in $(find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
       case "$f" in
         *extension/susfs.c) continue ;;
       esac
+      sed -i "s|^[ \t]*DEFINE_STATIC_KEY_TRUE($sym);\?|extern struct static_key_true $sym;|" "$f" 2>/dev/null
       sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE($sym);\?|extern struct static_key_false $sym;|" "$f" 2>/dev/null
+      sed -i "s|^[ \t]*struct static_key_true $sym[^;]*;|extern struct static_key_true $sym;|" "$f" 2>/dev/null
       sed -i "s|^[ \t]*struct static_key_false $sym[^;]*;|extern struct static_key_false $sym;|" "$f" 2>/dev/null
     done
   done
-  echo "post-0j static key 清理完成"  # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
-  true
+  echo "post-0j static key 清理完成"  true
   if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
     echo "::error::FinaSU selinux_hide.c 的 security_*_with_policy 仍未全局化（6.6 会链接失败）" >&2
     exit 1
