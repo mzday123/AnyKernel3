@@ -398,7 +398,9 @@ KSU_KBUILD_EOF
   #     恢复 Kbuild 原版（含 syscall hook 编译），随后按 0h 本意移除 adb_root.o（补丁版 adb_root 引用不匹配）。
   git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/Kbuild 2>/dev/null || true
   sed -i '/adb_root\.o/d' "$FINASU_KSU/Kbuild" 2>/dev/null || true
-  grep -q 'hook/syscall_hook_manager.o' "$FINASU_KSU/Kbuild" && echo "0k) Kbuild 已恢复原版（syscall_hook_manager.o 在编译列表）" || echo "0k) WARN: syscall_hook_manager.o 仍缺失"
+  grep -q 'srctree)/../KernelSU/kernel/include' "$FINASU_KSU/Kbuild" || \
+    echo 'ccflags-y += -I$(srctree)/../KernelSU/kernel/include -I$(srctree)/../KernelSU/uapi' >> "$FINASU_KSU/Kbuild"
+  grep -q 'hook/syscall_hook_manager.o' "$FINASU_KSU/Kbuild" && echo "0k) Kbuild 已恢复原版（syscall_hook_manager.o 在编译列表 + include 路径）" || echo "0k) WARN: syscall_hook_manager.o 仍缺失"
   # 0j7) 把 ksud_integration.c / init.c 等原版文件里的 static key 定义统一转 extern（定义由 susfs.c 提供）。
   #      sed 版本曾漏转（round13 链接 duplicate），改用 python 正则（支持 DEFINE 宏与 struct 变量两种写法）
 python3 - "$FINASU_KSU" <<'PYEOF'
