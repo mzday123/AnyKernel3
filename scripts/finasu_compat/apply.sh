@@ -408,6 +408,20 @@ KSU_KBUILD_EOF
     sed -i '/^kernelsu-objs += hook\/lsm_hook.o$/a kernelsu-objs += hook/arm64/syscall_hook.o' "$FINASU_KSU/Kbuild" 2>/dev/null || echo 'kernelsu-objs += hook/arm64/syscall_hook.o' >> "$FINASU_KSU/Kbuild"
     echo "0k) arm64/syscall_hook.o 已加回编译列表"
   fi
+
+  # 0l) 10_enable(SUSFS) 补丁在 arm64 上会引用 ksu_hook_* / ksu_stop_ksud_execve_hook，
+  #     但 v1.0.10 的 arm64/syscall_hook.c 只实现 ksu_syscall_table*（x86 patch-table 路径），
+  #     arm64 走 tracepoint，这些符号在 arm64 是死代码 → 注入空存根满足链接。
+  cat > "$KERNEL_ROOT/$KSU_DIR/kernel/hook/ksu_hook_stubs.c" <<'EOF'
+#include <linux/types.h>
+void ksu_hook_execve(void) {}
+void ksu_hook_execveat(void) {}
+void ksu_hook_newfstatat(void) {}
+void ksu_hook_faccessat(void) {}
+void ksu_stop_ksud_execve_hook(void) {}
+EOF
+  grep -q 'hook/ksu_hook_stubs.o' "$FINASU_KSU/Kbuild" || echo 'kernelsu-objs += hook/ksu_hook_stubs.o' >> "$FINASU_KSU/Kbuild"
+  echo "0l) ksu_hook_* 存根已注入"
   # 0j7) 把 ksud_integration.c / init.c 等原版文件里的 static key 定义统一转 extern（定义由 susfs.c 提供）。
   #      sed 版本曾漏转（round13 链接 duplicate），改用 python 正则（支持 DEFINE 宏与 struct 变量两种写法）
 python3 - "$FINASU_KSU" <<'PYEOF'
