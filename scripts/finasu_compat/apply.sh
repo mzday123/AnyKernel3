@@ -386,23 +386,6 @@ KSU_KBUILD_EOF
   git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/include/ksu.h 2>/dev/null && echo "0j) ksu.h 已恢复原版" || echo "0j) ksu.h checkout 失败（跳过）"
   # 恢复原版 sucompat.c（SUSFS 部分应用把 exec/sulog 调用改成 fd 版签名，与原版定义冲突；0g 适配不足时整体回退最稳）
   git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/feature/sucompat.c 2>/dev/null && echo "0j) sucompat.c 已恢复原版" || echo "0j) sucompat.c checkout 失败（跳过）"
-  # 原版 ksud_integration.c 自带 struct user_arg_ptr；若 SUSFS 文件（sucompat.c 等）仍引用该类型，
-  # 确保 ksu.h 中也有定义（检查缺失则从 ksud_integration.c 复制）
-  if ! grep -q "struct user_arg_ptr" "$FINASU_KSU/include/ksu.h" 2>/dev/null; then
-    python3 - "$FINASU_KSU/runtime/ksud_integration.c" "$FINASU_KSU/include/ksu.h" << 'PYEOF'
-import sys, re
-src = open(sys.argv[1], encoding='utf-8', errors='ignore').read()
-dst = open(sys.argv[2], encoding='utf-8', errors='ignore').read()
-m = re.search(r'struct user_arg_ptr \{.*?\n\};', src, re.S)
-if m and 'struct user_arg_ptr' not in dst:
-    add = '\n' + m.group(0) + '\n'
-    dst = dst + add
-    open(sys.argv[2], 'w', encoding='utf-8').write(dst)
-    print("user_arg_ptr 定义已追加到 ksu.h")
-else:
-    print("user_arg_ptr 无需追加（已存在或无匹配）")
-PYEOF
-  fi
   for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
     for f in $(find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
       case "$f" in
