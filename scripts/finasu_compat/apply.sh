@@ -360,20 +360,30 @@ KSU_KBUILD_EOF
   
   
   
-  # 0i) SUSFS 与 KSU 侧重复定义的 hook 符号：KSU 侧 DEFINE_STATIC_KEY_FALSE → extern 声明（定义由 SUSFS susfs.c 提供）
+  
+  # 0i) SUSFS 与 KSU 侧重复符号：函数定义弱化 + static key 定义转 extern（susfs.c 定义保留）
   echo "=== HOOK SYMBOL DEFINITIONS ==="
-  find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -n "DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled\|DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled" 2>/dev/null | grep -v "Binary" | head -20
+  find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -n "DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled\|DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled\|struct static_key_false ksu_is_input_hook_enabled\|struct static_key_false ksu_is_init_rc_hook_enabled" 2>/dev/null | grep -v "Binary" | head -20
   echo "=== END DEFINITIONS ==="
+  # 1) static key 定义转 extern（排除 susfs.c）
   for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
-    for f in $(find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "DEFINE_STATIC_KEY_FALSE($sym)" 2>/dev/null); do
+    for f in $(find "$FINASU_KSU" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "DEFINE_STATIC_KEY_FALSE($sym)\|struct static_key_false $sym;" 2>/dev/null); do
       case "$f" in
         *extension/susfs.c) echo "skip susfs.c 定义保留: $f" ;;
-        *) sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE($sym);\?|extern struct static_key_false $sym;|" "$f" 2>/dev/null ;;
+        *)
+          sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE($sym);\?|extern struct static_key_false $sym;|" "$f" 2>/dev/null
+          sed -i "s|^[ \t]*struct static_key_false $sym;|extern struct static_key_false $sym;|" "$f" 2>/dev/null
+          ;;
       esac
     done
   done
-  echo "hook 符号已弱化（KSU 侧全部 .c/.h），链接由 SUSFS 接管"  
-  
+  # 2) 函数定义弱化（__weak）
+  for sym in ksu_handle_sys_read ksu_handle_sys_reboot; do
+    for f in $(find "$FINASU_KSU" -name "*.c" -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
+      sed -i "s|^\([a-zA-Z_][a-zA-Z0-9_ ]*\)$sym\([^a-zA-Z0-9_]\)|\1 __weak $sym\2|" "$f" 2>/dev/null
+    done
+  done
+  echo "hook 符号已处理（函数弱化 + static key extern），链接由 SUSFS 接管"  
   
   # 0j) SUSFS 补丁部分应用破坏了 FinaSU input hook 代码块（定义被删/引用残留，编译报 undeclared）
   #     按 fallback 链鲁棒删除整个 input hook 区域（ksu_handle_vfs_fstat 行首 → ksu_stop_input_hook_runtime 函数体结束）
