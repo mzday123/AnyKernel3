@@ -414,16 +414,40 @@ KSU_KBUILD_EOF
     sed -i '0,/ksu_sulog_capture_sucompat/{/ksu_sulog_capture_sucompat/s/^/struct user_arg_ptr;\n/}' "$EVENT_H" 2>/dev/null || true
     echo "0j5) event.h 已补 struct user_arg_ptr 全局前向声明（行首插入）"
   fi
-  # 0j6) event.c 需要 struct user_arg_ptr 完整定义（前向声明不够，round7-11：incomplete type）
-  #      binfmts.h/fs.h 在 GKI 6.12 均无该 struct（已验证 binfmts=1 fs=1 仍 incomplete）。
-  #      sucompat.c 能编译过 = 它 include 的 FinaSU util.h 提供完整定义（FIX2 即指向 ../include/util.h）。
-  #      给 event.c 同样注入 util.h
+  # 0j6) event.c 需要 struct user_arg_ptr 完整定义（round7-12 反复 incomplete）
+  #      已证 GKI 6.12 的 binfmts.h/fs.h 与 FinaSU ksu.h/ksud.h/util.h 均无该 struct（补丁版 ksu.h 有但已恢复原版）。
+  #      直接在 event.c 注入内核标准完整定义（与 KSU/SUSFS 使用的语义一致），并在 include 区后插入
   EVENT_C="$FINASU_KSU/sulog/event.c"
-  if [ -f "$EVENT_C" ]; then
-    if ! grep -q 'include/util.h' "$EVENT_C"; then
-      sed -i '0,/^[[:space:]]*#include/i #include "../include/util.h"' "$EVENT_C" 2>/dev/null || true
-    fi
-    echo "0j6) event.c 注入 util.h 完成 (util=$(grep -c 'include/util.h' "$EVENT_C" 2>/dev/null || echo 0) binfmts=$(grep -c 'linux/binfmts.h' "$EVENT_C" 2>/dev/null || echo 0))"
+  if [ -f "$EVENT_C" ] && ! grep -q 'struct user_arg_ptr {' "$EVENT_C"; then
+python3 - "$EVENT_C" <<'PYEOF'
+import sys
+p = sys.argv[1]
+src = open(p, encoding='utf-8', errors='replace').read()
+defn = ('struct user_arg_ptr {\n'
+        '\tbool is_compat;\n'
+        '\tunion {\n'
+        '\t\tconst char __user *const __user *native;\n'
+        '#ifdef CONFIG_COMPAT\n'
+        '\t\tconst compat_uptr_t __user *compat;\n'
+        '#endif\n'
+        '\t} ptr;\n'
+        '};\n')
+lines = src.split('\n')
+last_inc = -1
+for i, l in enumerate(lines):
+    if l.strip().startswith('#include'):
+        last_inc = i
+if last_inc >= 0:
+    lines.insert(last_inc + 1, defn)
+    open(p, 'w', encoding='utf-8', newline='\n').write('\n'.join(lines))
+    print('0j6b) event.c 已注入 struct user_arg_ptr 完整定义 (after include line %d)' % (last_inc + 1))
+else:
+    print('0j6b) event.c 无 #include 行，注入到文件头')
+    open(p, 'w', encoding='utf-8', newline='\n').write(defn + src)
+PYEOF
+    echo "0j6) event.c struct user_arg_ptr 完整定义注入完成"
+  else
+    echo "0j6) event.c 已有 struct user_arg_ptr 定义或文件缺失，跳过"
   fi
 
   
