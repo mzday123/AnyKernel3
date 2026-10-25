@@ -391,20 +391,34 @@ KSU_KBUILD_EOF
   #   app_profile.h/c 恢复：补丁版删了 ksu_app_profile_init 声明，恢复的原版 init.c 调用会 undeclared（round6）
   git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/runtime/ksud.h kernel/core/init.c kernel/feature/sucompat.h kernel/feature/adb_root.c kernel/feature/selinux_hide.c kernel/hook/syscall_event_bridge.c kernel/policy/app_profile.h kernel/policy/app_profile.c 2>/dev/null
   echo "0j-batch) 补丁改过的 KSU 文件已恢复 v1.0.10 原版（event.h 保留补丁版）"
-  for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
-    for f in $(find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
-      case "$f" in
-        *extension/susfs.c) echo "skip susfs.c 定义保留: $f" ;;
-        *)
-          sed -i "s|^[ \t]*DEFINE_STATIC_KEY_TRUE($sym);\?|extern struct static_key_true $sym;|" "$f" 2>/dev/null
-          sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE($sym);\?|extern struct static_key_false $sym;|" "$f" 2>/dev/null
-          sed -i "s|^[ \t]*struct static_key_true $sym[^;]*;|extern struct static_key_true $sym;|" "$f" 2>/dev/null
-          sed -i "s|^[ \t]*struct static_key_false $sym[^;]*;|extern struct static_key_false $sym;|" "$f" 2>/dev/null
-          ;;
-      esac
-    done
-  done
-  echo "0j) 原版 ksud_integration.c + ksu.h 恢复 + static key extern 完成"
+  # 0j7) 把 ksud_integration.c / init.c 等原版文件里的 static key 定义统一转 extern（定义由 susfs.c 提供）。
+  #      sed 版本曾漏转（round13 链接 duplicate），改用 python 正则（支持 DEFINE 宏与 struct 变量两种写法）
+python3 - "$FINASU_KSU" <<'PYEOF'
+import sys, os, re
+root = os.path.dirname(sys.argv[1])
+syms = ['ksu_is_input_hook_enabled', 'ksu_is_init_rc_hook_enabled']
+for dirpath, _, files in os.walk(root):
+    for fn in files:
+        if not (fn.endswith('.c') or fn.endswith('.h')):
+            continue
+        p = os.path.join(dirpath, fn)
+        if os.path.normpath(p).endswith('extension/susfs.c'):
+            continue
+        try:
+            src = open(p, encoding='utf-8', errors='replace').read()
+        except Exception:
+            continue
+        orig = src
+        for sym in syms:
+            src = re.sub(r'^[ \t]*DEFINE_STATIC_KEY_(TRUE|FALSE)\(\s*%s\s*\)\s*;' % re.escape(sym),
+                         r'extern struct static_key_\1 %s;' % sym, src, flags=re.M)
+            src = re.sub(r'^[ \t]*struct static_key_(true|false)\s+%s\s*=[^;]*;' % re.escape(sym),
+                         r'extern struct static_key_\1 %s;' % sym, src, flags=re.M)
+        if src != orig:
+            open(p, 'w', encoding='utf-8', newline='\n').write(src)
+            print('0j7) static key extern: %s' % os.path.relpath(p, root))
+PYEOF
+  echo "0j) 原版 ksud_integration.c + ksu.h 恢复 + static key extern（python）完成"
 
   # 0j5) event.h（补丁版保留）函数原型中的 struct user_arg_ptr 需全局前向声明：
   #      参数内声明的 struct 仅函数原型作用域可见，与 ksu.h 完整定义被视为不同类型 → 指针不兼容（round5c）
