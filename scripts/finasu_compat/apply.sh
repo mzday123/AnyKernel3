@@ -457,7 +457,11 @@ PYEOF
     done
   done
   echo "post-0j static key 清理完成"  true
-  if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
+
+  # 0j3) susfs.c 的 static key 定义转 extern（定义由 KSU 侧编译单元提供，消除 duplicate symbol）
+  sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled);\?|extern struct static_key_false ksu_is_input_hook_enabled;|" "$FINASU_KSU/extension/susfs.c" 2>/dev/null
+  sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled);\?|extern struct static_key_false ksu_is_init_rc_hook_enabled;|" "$FINASU_KSU/extension/susfs.c" 2>/dev/null
+  echo "susfs.c static key 定义转 extern（KSU 侧提供定义）"  if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
     echo "::error::FinaSU selinux_hide.c 的 security_*_with_policy 仍未全局化（6.6 会链接失败）" >&2
     exit 1
   fi
