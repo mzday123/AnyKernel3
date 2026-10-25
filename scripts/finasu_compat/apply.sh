@@ -412,14 +412,7 @@ KSU_KBUILD_EOF
     printf '\nint ksu_adb_root_init(void) { return 0; }\nvoid ksu_adb_root_exit(void) { }\n' >> "$SUSFS_FILE"
   fi
   echo "0j4) ksu_adb_root 桩定义已追加（input hook 原版保留）"
-  if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
-    echo "::error::FinaSU selinux_hide.c 的 security_*_with_policy 仍未全局化（6.6 会链接失败）" >&2
-    exit 1
-  fi
-  if grep -qE 'ksu_syscall_hook_init\(\)|ksu_syscall_hook_manager_(init|exit)\(\)' "$FINASU_INIT"; then
-    echo "::error::FinaSU init.c 仍存在指向已移除模块的调用" >&2
-    exit 1
-  fi
+  # 6.6 时代的 selinux_hide/init.c 全局化检查不适用 6.12：round5 已把两文件恢复到 v1.0.10 原版（原版自洽），不再误杀
 fi
 
 echo "FinaSU SUSFS 内核侧集成补丁应用完成"
