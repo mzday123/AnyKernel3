@@ -398,6 +398,7 @@ import sys, os, re
 root = os.path.dirname(sys.argv[1])
 syms = ['ksu_is_input_hook_enabled', 'ksu_is_init_rc_hook_enabled']
 converted = []
+hits = []
 for dirpath, _, files in os.walk(root):
     for fn in files:
         if not (fn.endswith('.c') or fn.endswith('.h')):
@@ -409,19 +410,21 @@ for dirpath, _, files in os.walk(root):
             src = open(p, encoding='utf-8', errors='replace').read()
         except Exception:
             continue
+        for sym in syms:
+            if sym in src:
+                hits.append('%s:%s' % (os.path.relpath(p, root), sym))
         orig = src
         for sym in syms:
             out = []
             for line in src.split('\n'):
                 st = line.strip()
-                m = re.match(r'DEFINE_STATIC_KEY_(TRUE|FALSE)\(\s*%s\s*\)\s*;?' % re.escape(sym), st)
                 typ = None
-                if m:
-                    typ = 'true' if m.group(1) == 'TRUE' else 'false'
-                else:
-                    m2 = re.match(r'struct static_key_(true|false)\s+%s\s*(=[^;]*)?;?' % re.escape(sym), st)
-                    if m2:
-                        typ = m2.group(1)
+                if 'DEFINE_STATIC_KEY' in st and re.search(r'\(\s*%s\s*\)' % re.escape(sym), st):
+                    m = re.search(r'DEFINE_STATIC_KEY_(TRUE|FALSE)', st)
+                    typ = 'true' if (m and m.group(1) == 'TRUE') else 'true'
+                elif re.search(r'\bstruct\s+static_key_(true|false)\b', st) and re.search(r'\b%s\b' % re.escape(sym), st) and 'extern' not in st:
+                    m = re.search(r'static_key_(true|false)', st)
+                    typ = m.group(1) if m else 'true'
                 if typ:
                     out.append('extern struct static_key_%s %s;' % (typ, sym))
                 else:
@@ -430,6 +433,7 @@ for dirpath, _, files in os.walk(root):
         if src != orig:
             open(p, 'w', encoding='utf-8', newline='\n').write(src)
             converted.append(os.path.relpath(p, root))
+print('0j7) hits: ' + ('; '.join(hits) if hits else 'NONE'))
 print('0j7) converted: ' + ('; '.join(converted) if converted else 'NONE'))
 PYEOF
   echo "0j) 原版 ksud_integration.c + ksu.h 恢复 + static key extern（python 行级）完成"
