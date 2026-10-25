@@ -395,12 +395,19 @@ KSU_KBUILD_EOF
   echo "0j-batch) 补丁改过的 KSU 文件已恢复 v1.0.10 原版（event.h 保留补丁版）"
   # 0k) 10_enable 补丁从 Kbuild 删除了 syscall_hook_manager.o / arm64/syscall_hook.o（SUSFS 接管 syscall hook），
   #     但 0j 恢复的原版 init.c / ksud_integration.c 仍调用原版 syscall hook API → undefined。
-  #     恢复 Kbuild 原版（含 syscall hook 编译），随后按 0h 本意移除 adb_root.o（补丁版 adb_root 引用不匹配）。
-  git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/Kbuild 2>/dev/null || true
-  sed -i '/adb_root\.o/d' "$FINASU_KSU/Kbuild" 2>/dev/null || true
-  grep -q 'srctree)/../KernelSU/kernel/include' "$FINASU_KSU/Kbuild" || \
-    echo 'ccflags-y += -I$(srctree)/../KernelSU/kernel/include -I$(srctree)/../KernelSU/uapi' >> "$FINASU_KSU/Kbuild"
-  grep -q 'hook/syscall_hook_manager.o' "$FINASU_KSU/Kbuild" && echo "0k) Kbuild 已恢复原版（syscall_hook_manager.o 在编译列表 + include 路径）" || echo "0k) WARN: syscall_hook_manager.o 仍缺失"
+  #     只加回这两个编译项（保留补丁版 Kbuild 的其余 ccflags/include，避免头文件丢失）。
+  if grep -q 'hook/syscall_hook_manager.o' "$FINASU_KSU/Kbuild"; then
+    echo "0k) syscall_hook_manager.o 已在编译列表"
+  else
+    sed -i '/^kernelsu-objs += hook\/lsm_hook.o$/a kernelsu-objs += hook/syscall_hook_manager.o' "$FINASU_KSU/Kbuild" 2>/dev/null || echo 'kernelsu-objs += hook/syscall_hook_manager.o' >> "$FINASU_KSU/Kbuild"
+    echo "0k) syscall_hook_manager.o 已加回编译列表"
+  fi
+  if grep -q 'hook/arm64/syscall_hook.o' "$FINASU_KSU/Kbuild"; then
+    echo "0k) arm64/syscall_hook.o 已在编译列表"
+  else
+    sed -i '/^kernelsu-objs += hook\/lsm_hook.o$/a kernelsu-objs += hook/arm64/syscall_hook.o' "$FINASU_KSU/Kbuild" 2>/dev/null || echo 'kernelsu-objs += hook/arm64/syscall_hook.o' >> "$FINASU_KSU/Kbuild"
+    echo "0k) arm64/syscall_hook.o 已加回编译列表"
+  fi
   # 0j7) 把 ksud_integration.c / init.c 等原版文件里的 static key 定义统一转 extern（定义由 susfs.c 提供）。
   #      sed 版本曾漏转（round13 链接 duplicate），改用 python 正则（支持 DEFINE 宏与 struct 变量两种写法）
 python3 - "$FINASU_KSU" <<'PYEOF'
