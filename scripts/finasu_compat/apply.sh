@@ -414,6 +414,13 @@ KSU_KBUILD_EOF
     sed -i '0,/ksu_sulog_capture_sucompat/{/ksu_sulog_capture_sucompat/s/^/struct user_arg_ptr;\n/}' "$EVENT_H" 2>/dev/null || true
     echo "0j5) event.h 已补 struct user_arg_ptr 全局前向声明（行首插入）"
   fi
+  # 0j6) event.c 需要 struct user_arg_ptr 完整定义（前向声明不够，round7：incomplete type）
+  #      补 include ksu.h（kernel/sulog → ../include/ksu.h）
+  EVENT_C="$FINASU_KSU/sulog/event.c"
+  if [ -f "$EVENT_C" ] && ! grep -q 'include.*ksu\.h' "$EVENT_C"; then
+    sed -i '0,/#include/{s//#include "..\/include\/ksu.h"\n&/}' "$EVENT_C" 2>/dev/null || true
+    echo "0j6) event.c 已补 include ksu.h（完整 struct user_arg_ptr）"
+  fi
 
   
   # 0j4) 为 SUSFS 引用的已移除 adb_root 符号提供桩定义（0h 已移除 adb_root 编译；input hook 原版保留，无需 ksu_syscall_table 桩）
