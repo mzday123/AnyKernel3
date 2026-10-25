@@ -388,25 +388,8 @@ if start != -1 and end != -1 and start < end:
 else:
     print("WARN: markers not found (start=%d end=%d)" % (start, end))
 PYEOF
-  import sys
-p = sys.argv[1]
-s = open(p, encoding='utf-8', errors='ignore').read()
-start = s.find("static long (*orig_sys_read)")
-end_marker = "void ksu_stop_input_hook_runtime(void)"
-end = s.find(end_marker)
-if start != -1 and end != -1 and start < end:
-    body_end = s.find("\n}\n", s.find("{", end))
-    if body_end != -1:
-        s = s[:start] + "/* FinaSU input hook disabled: conflicts with SUSFS partial patch */\n" + s[body_end+3:]
-        s = s.replace("    // stop hook first!\n    ksu_stop_input_hook_runtime();\n", "")
-        open(p, 'w', encoding='utf-8').write(s)
-        print("input hook block disabled (start=%d body_end=%d)" % (start, body_end))
-    else:
-        print("WARN: body end not found")
-else:
-    print("WARN: markers not found (start=%d end=%d)" % (start, end))
-PYEOF
 
+  
   # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
   true
   if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
