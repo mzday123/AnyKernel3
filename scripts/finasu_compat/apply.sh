@@ -388,7 +388,8 @@ KSU_KBUILD_EOF
   git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/feature/sucompat.c 2>/dev/null && echo "0j) sucompat.c 已恢复原版" || echo "0j) sucompat.c checkout 失败（跳过）"
   # 0j-batch: 恢复其余被 10_enable 补丁改过的 KSU 文件（声明/定义全部回到 v1.0.10 原版，避免补丁版残留与恢复版冲突）
   #   event.h 除外：SUSFS sulog 补丁版与 susfs.c 配套，保留 + FIX3a.1 强转处理 sucompat.c 调用
-  git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/runtime/ksud.h kernel/core/init.c kernel/feature/sucompat.h kernel/feature/adb_root.c kernel/feature/selinux_hide.c kernel/hook/syscall_event_bridge.c 2>/dev/null
+  #   app_profile.h/c 恢复：补丁版删了 ksu_app_profile_init 声明，恢复的原版 init.c 调用会 undeclared（round6）
+  git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/runtime/ksud.h kernel/core/init.c kernel/feature/sucompat.h kernel/feature/adb_root.c kernel/feature/selinux_hide.c kernel/hook/syscall_event_bridge.c kernel/policy/app_profile.h kernel/policy/app_profile.c 2>/dev/null
   echo "0j-batch) 补丁改过的 KSU 文件已恢复 v1.0.10 原版（event.h 保留补丁版）"
   for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
     for f in $(find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
@@ -407,10 +408,11 @@ KSU_KBUILD_EOF
 
   # 0j5) event.h（补丁版保留）函数原型中的 struct user_arg_ptr 需全局前向声明：
   #      参数内声明的 struct 仅函数原型作用域可见，与 ksu.h 完整定义被视为不同类型 → 指针不兼容（round5c）
+  #      注意：必须在匹配行【行首】插入（s/^/.../），不能用 s//...&/ 替换匹配文本（会把函数声明拆断，round6 教训）
   EVENT_H="$FINASU_KSU/sulog/event.h"
   if [ -f "$EVENT_H" ] && ! grep -q '^struct user_arg_ptr;' "$EVENT_H"; then
-    sed -i '0,/ksu_sulog_capture_sucompat/{s//struct user_arg_ptr;\n&/}' "$EVENT_H" 2>/dev/null || true
-    echo "0j5) event.h 已补 struct user_arg_ptr 全局前向声明"
+    sed -i '0,/ksu_sulog_capture_sucompat/{/ksu_sulog_capture_sucompat/s/^/struct user_arg_ptr;\n/}' "$EVENT_H" 2>/dev/null || true
+    echo "0j5) event.h 已补 struct user_arg_ptr 全局前向声明（行首插入）"
   fi
 
   
