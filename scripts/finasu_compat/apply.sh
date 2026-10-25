@@ -414,13 +414,13 @@ KSU_KBUILD_EOF
     sed -i '0,/ksu_sulog_capture_sucompat/{/ksu_sulog_capture_sucompat/s/^/struct user_arg_ptr;\n/}' "$EVENT_H" 2>/dev/null || true
     echo "0j5) event.h 已补 struct user_arg_ptr 全局前向声明（行首插入）"
   fi
-  # 0j6) event.c 需要 struct user_arg_ptr 完整定义（前向声明不够，round7/8：incomplete type）
-  #      struct user_arg_ptr 是 Linux 内核 6.12 自带（linux/binfmts.h）；KSU 侧定义在 runtime/ksud.h（原版）。
-  #      双保险 include：binfmts.h（内核完整定义）+ ksud.h（KSU 定义）
+  # 0j6) event.c 需要 struct user_arg_ptr 完整定义（前向声明不够，round7/8/9：incomplete type）
+  #      struct user_arg_ptr 是 Linux 内核定义（include/linux/binfmts.h）。event.c 原版可能已 include ksud.h
+  #      （只有前向声明），必须无条件补 binfmts.h（不因已含 ksud.h 而跳过 —— round9 教训）
   EVENT_C="$FINASU_KSU/sulog/event.c"
-  if [ -f "$EVENT_C" ] && ! grep -q 'include.*\(binfmts\|ksud\)\.h' "$EVENT_C"; then
-    sed -i '0,/#include/{s//#include <linux\/binfmts.h>\n#include "..\/runtime\/ksud.h"\n&/}' "$EVENT_C" 2>/dev/null || true
-    echo "0j6) event.c 已补 include binfmts.h + ksud.h（完整 struct user_arg_ptr）"
+  if [ -f "$EVENT_C" ] && ! grep -q '#include <linux/binfmts.h>' "$EVENT_C"; then
+    sed -i '0,/#include/{s//#include <linux\/binfmts.h>\n&/}' "$EVENT_C" 2>/dev/null || true
+    echo "0j6) event.c 已无条件补 include linux/binfmts.h（完整 struct user_arg_ptr）"
   fi
 
   
