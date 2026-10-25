@@ -20,6 +20,7 @@ UPSTREAM_PATCH="$SUSFS4KSU/kernel_patches/KernelSU/10_enable_susfs_for_ksu.patch
 [ -d "$KERNEL_ROOT/$KSU_DIR/.git" ] || { echo "::error::$KSU_DIR 不是 git 仓库检出，无法应用补丁" >&2; exit 1; }
 
 echo "步骤 1/2: 应用 susfs4ksu 10_enable_susfs_for_ksu.patch（patch --forward，允许部分失败）..."
+cp "$KERNEL_ROOT/$KSU_DIR/kernel/runtime/ksud_integration.c" "$KERNEL_ROOT/$KSU_DIR/kernel/runtime/ksud_integration.c.origbak" 2>/dev/null || true
 cp "$UPSTREAM_PATCH" "$KERNEL_ROOT/$KSU_DIR/10_enable_susfs_for_ksu.patch"
 ( cd "$KERNEL_ROOT/$KSU_DIR" && patch -p1 --forward < 10_enable_susfs_for_ksu.patch ) || true
 rm -f "$KERNEL_ROOT/$KSU_DIR/10_enable_susfs_for_ksu.patch"
@@ -362,11 +363,25 @@ KSU_KBUILD_EOF
   
   
   
-  # 0i) SUSFS 与 KSU 侧重复符号：函数定义弱化 + static key 定义转 extern（TRUE/FALSE 形态，susfs.c 定义保留）
-  echo "=== HOOK SYMBOL DEFINITIONS ==="
-  find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -n "ksu_is_input_hook_enabled\|ksu_is_init_rc_hook_enabled" 2>/dev/null | grep -v "Binary" | grep -v "static_key_enabled\|static_branch_" | head -20
-  echo "=== END DEFINITIONS ==="
-  # 1) static key 定义转 extern（TRUE/FALSE 形态，排除 susfs.c）
+  # 0i) SUSFS 与 KSU 侧重复符号：函数定义弱化（static key 处理移至 0j 恢复原版后统一执行）
+  # 2) 函数定义弱化（__weak）
+  for sym in ksu_handle_sys_read ksu_handle_sys_reboot; do
+    for f in $(find "$(dirname "$FINASU_KSU")" -name "*.c" -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
+      sed -i "s|^\([a-zA-Z_][a-zA-Z0-9_ ]*\)$sym\([^a-zA-Z0-9_]\)|\1 __weak $sym\2|" "$f" 2>/dev/null
+    done
+  done
+  echo "hook 符号已处理（函数弱化 + static key extern），链接由 SUSFS 接管"  
+  # 0j) SUSFS 补丁部分应用会破坏 FinaSU input hook（KSU root/syscall 机制所在）。
+  #     改为整体恢复 KSU 原版 ksud_integration.c（保留 KSU syscall/root），
+  #     再对 input hook 两个 static key 做 extern 处理（定义由 susfs.c 提供，消除 duplicate）。
+  BAK="$FINASU_KSU/runtime/ksud_integration.c.origbak"
+  if [ -f "$BAK" ]; then
+    cp "$BAK" "$FINASU_KSU/runtime/ksud_integration.c"
+    echo "0j) 已从备份恢复 ksud_integration.c 原版（KSU root 机制保留）"
+  else
+    echo "0j) 备份缺失，尝试 git checkout 恢复"
+    git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/runtime/ksud_integration.c 2>/dev/null || true
+  fi
   for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
     for f in $(find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
       case "$f" in
@@ -380,99 +395,15 @@ KSU_KBUILD_EOF
       esac
     done
   done
-  # 2) 函数定义弱化（__weak）
-  for sym in ksu_handle_sys_read ksu_handle_sys_reboot; do
-    for f in $(find "$(dirname "$FINASU_KSU")" -name "*.c" -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
-      sed -i "s|^\([a-zA-Z_][a-zA-Z0-9_ ]*\)$sym\([^a-zA-Z0-9_]\)|\1 __weak $sym\2|" "$f" 2>/dev/null
-    done
-  done
-  echo "hook 符号已处理（函数弱化 + static key extern），链接由 SUSFS 接管"  
-  # 0j) SUSFS 补丁部分应用破坏了 FinaSU input hook 代码块（定义被删/引用残留，编译报 undeclared）
-  #     按 fallback 链鲁棒删除整个 input hook 区域（ksu_handle_vfs_fstat 行首 → ksu_stop_input_hook_runtime 函数体结束）
-  python3 - "$FINASU_KSU/runtime/ksud_integration.c" << 'PYEOF'
-import sys, re
-p = sys.argv[1]
-s = open(p, encoding='utf-8', errors='ignore').read()
-orig = s
-starts = [
-    "ksu_handle_vfs_fstat(int fd, loff_t *kstat_size_ptr)",
-    "void __weak ksu_handle_vfs_fstat(",
-    "ksu_handle_vfs_fstat(",
-    "static long ksu_sys_read(",
-    "static long (*orig_sys_read)",
-]
-start = -1
-for m in starts:
-    idx = s.find(m)
-    if idx != -1:
-        start = idx
-        break
-end_marker = "void ksu_stop_input_hook_runtime(void)"
-end = s.find(end_marker)
-if start != -1 and end != -1 and start < end:
-    # 前移到行首，删除完整函数签名行（避免残留 void __weak 前缀）
-    start = s.rfind("\n", 0, start) + 1
-    brace = s.find("{", end)
-    depth = 0
-    i = brace
-    body_end = -1
-    while i < len(s):
-        if s[i] == "{": depth += 1
-        elif s[i] == "}":
-            depth -= 1
-            if depth == 0:
-                body_end = i + 1
-                break
-        i += 1
-    if body_end != -1:
-        s = s[:start] + "/* FinaSU input hook disabled (SUSFS partial patch) */\n" + s[body_end:]
-        s = s.replace("ksu_stop_input_hook_runtime();", "/* ksu_stop_input_hook_runtime(); */")
-        for pat in [r'^\s*ksu_syscall_table_hook\(__NR_read[^\n]*\n?',
-                    r'^\s*ksu_syscall_table_hook\(__NR_fstat[^\n]*\n?',
-                    r'^\s*register_kprobe\([^\n]*\n?',
-                    r'^\s*INIT_WORK\(&stop_input_hook_work[^\n]*\n?',
-                    r'^\s*unregister_kprobe\([^\n]*\n?',
-                    r'^\s*ret = register_kprobe[^\n]*\n?',
-                    r'^\s*(?:int|bool) ret = schedule_work[^\n]*\n?']:
-            s = re.sub(pat, '', s, flags=re.M)
-        open(p, 'w', encoding='utf-8').write(s)
-        print("INPUT HOOK DISABLED start=%d body_end=%d removed=%d" % (start, body_end, len(orig)-len(s)))
-    else:
-        print("WARN: brace mismatch")
-else:
-    print("WARN: markers not found (start=%d end=%d)" % (start, end))
-PYEOF
+  echo "0j) ksud_integration.c 原版恢复 + static key extern 完成（input hook 保留）"
 
   
-  # 0j2) 0j 删除后：清理残留 static key 定义（KSU 侧 TRUE/FALSE 任何形态 → extern，susfs.c 保留）
-  for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
-    for f in $(find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
-      case "$f" in
-        *extension/susfs.c) continue ;;
-      esac
-      sed -i "s|^[ \t]*DEFINE_STATIC_KEY_TRUE($sym);\?|extern struct static_key_true $sym;|" "$f" 2>/dev/null
-      sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE($sym);\?|extern struct static_key_false $sym;|" "$f" 2>/dev/null
-      sed -i "s|^[ \t]*struct static_key_true $sym[^;]*;|extern struct static_key_true $sym;|" "$f" 2>/dev/null
-      sed -i "s|^[ \t]*struct static_key_false $sym[^;]*;|extern struct static_key_false $sym;|" "$f" 2>/dev/null
-    done
-  done
-  echo "post-0j static key 清理完成"
-  true
-
-  # 0j3) susfs.c 的 static key 定义转 extern（定义由 KSU 侧编译单元提供，消除 duplicate symbol）
-  sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE(ksu_is_input_hook_enabled);\?|extern struct static_key_false ksu_is_input_hook_enabled;|" "$FINASU_KSU/extension/susfs.c" 2>/dev/null
-  sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled);\?|extern struct static_key_false ksu_is_init_rc_hook_enabled;|" "$FINASU_KSU/extension/susfs.c" 2>/dev/null
-  echo "susfs.c static key 定义转 extern（KSU 侧提供定义）"
-
-  # 0j4) 为 SUSFS 引用的已移除 KSU 符号提供桩定义（input hook/adb root 已禁用，桩实现保证链接，不删除引用行以免破坏语法）
+  # 0j4) 为 SUSFS 引用的已移除 adb_root 符号提供桩定义（0h 已移除 adb_root 编译；input hook 原版保留，无需 ksu_syscall_table 桩）
   SUSFS_FILE="$FINASU_KSU/extension/susfs.c"
-  if ! grep -q "void \*ksu_syscall_table\[" "$SUSFS_FILE"; then
-    printf '\nvoid *ksu_syscall_table[1024] = { 0 };\n' >> "$SUSFS_FILE"
-  fi
   if ! grep -q "int ksu_adb_root_init" "$SUSFS_FILE"; then
     printf '\nint ksu_adb_root_init(void) { return 0; }\nvoid ksu_adb_root_exit(void) { }\n' >> "$SUSFS_FILE"
   fi
-  echo "SUSFS 引用符号桩定义已追加"
+  echo "0j4) ksu_adb_root 桩定义已追加（input hook 原版保留）"
   if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
     echo "::error::FinaSU selinux_hide.c 的 security_*_with_policy 仍未全局化（6.6 会链接失败）" >&2
     exit 1
