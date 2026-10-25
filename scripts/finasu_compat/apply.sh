@@ -389,7 +389,7 @@ KSU_KBUILD_EOF
   # 0j-batch: 恢复其余被 10_enable 补丁改过的 KSU 文件（声明/定义全部回到 v1.0.10 原版，避免补丁版残留与恢复版冲突）
   #   event.h 除外：SUSFS sulog 补丁版与 susfs.c 配套，保留 + FIX3a.1 强转处理 sucompat.c 调用
   #   app_profile.h/c 恢复：补丁版删了 ksu_app_profile_init 声明，恢复的原版 init.c 调用会 undeclared（round6）
-  for f in kernel/runtime/ksud.h kernel/core/init.c kernel/feature/sucompat.h kernel/feature/adb_root.c kernel/feature/selinux_hide.c kernel/hook/syscall_event_bridge.c kernel/hook/syscall_hook_manager.c kernel/hook/syscall_hook_manager.h kernel/hook/arm64/syscall_hook.c kernel/policy/app_profile.h kernel/policy/app_profile.c; do
+  for f in kernel/runtime/ksud.h kernel/core/init.c kernel/feature/sucompat.h kernel/feature/adb_root.c kernel/feature/selinux_hide.c kernel/hook/syscall_event_bridge.c kernel/hook/arm64/syscall_hook.c kernel/policy/app_profile.h kernel/policy/app_profile.c; do
     git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- "$f" 2>/dev/null || echo "0j-batch skip: $f"
   done
   echo "0j-batch) 补丁改过的 KSU 文件已恢复 v1.0.10 原版（event.h 保留补丁版）"
