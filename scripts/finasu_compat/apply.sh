@@ -366,10 +366,29 @@ KSU_KBUILD_EOF
     done
   done
   echo "hook 符号已弱化（KSU 侧），链接由 SUSFS 接管"
+
   # 0j) SUSFS 补丁部分应用破坏了 FinaSU input hook 代码块（引用被删除的定义，编译报 undeclared）
   #     禁用该区域（input hook 对正常使用无影响；safe_mode 中的调用一并移除）
-  python3 - "/runtime/ksud_integration.c" << 'PYEOF'
+  python3 - "$FINASU_KSU/runtime/ksud_integration.c" << 'PYEOF'
 import sys
+p = sys.argv[1]
+s = open(p, encoding='utf-8', errors='ignore').read()
+start = s.find("static long (*orig_sys_read)")
+end_marker = "void ksu_stop_input_hook_runtime(void)"
+end = s.find(end_marker)
+if start != -1 and end != -1 and start < end:
+    body_end = s.find("\n}\n", s.find("{", end))
+    if body_end != -1:
+        s = s[:start] + "/* FinaSU input hook disabled: conflicts with SUSFS partial patch */\n" + s[body_end+3:]
+        s = s.replace("    // stop hook first!\n    ksu_stop_input_hook_runtime();\n", "")
+        open(p, 'w', encoding='utf-8').write(s)
+        print("input hook block disabled (start=%d body_end=%d)" % (start, body_end))
+    else:
+        print("WARN: body end not found")
+else:
+    print("WARN: markers not found (start=%d end=%d)" % (start, end))
+PYEOF
+  import sys
 p = sys.argv[1]
 s = open(p, encoding='utf-8', errors='ignore').read()
 start = s.find("static long (*orig_sys_read)")
