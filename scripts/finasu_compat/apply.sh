@@ -371,17 +371,9 @@ KSU_KBUILD_EOF
     done
   done
   echo "hook 符号已处理（函数弱化 + static key extern），链接由 SUSFS 接管"  
-  # 0j) SUSFS 补丁部分应用会破坏 FinaSU input hook（KSU root/syscall 机制所在）。
-  #     改为整体恢复 KSU 原版 ksud_integration.c（保留 KSU syscall/root），
-  #     再对 input hook 两个 static key 做 extern 处理（定义由 susfs.c 提供，消除 duplicate）。
-  BAK="$FINASU_KSU/runtime/ksud_integration.c.origbak"
-  if [ -f "$BAK" ]; then
-    cp "$BAK" "$FINASU_KSU/runtime/ksud_integration.c"
-    echo "0j) 已从备份恢复 ksud_integration.c 原版（KSU root 机制保留）"
-  else
-    echo "0j) 备份缺失，尝试 git checkout 恢复"
-    git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/runtime/ksud_integration.c 2>/dev/null || true
-  fi
+  # 0j) 33034（v1.0.10）：SUSFS 补丁对 ksud_integration.c 完整应用（无 rejects），input hook 由 SUSFS 版自洽
+  #     （KSU root/syscall 机制保留在补丁版中）。不恢复原版（原版与 SUSFS 版 ksu.h 声明冲突），
+  #     仅对 input hook 两个 static key 做 extern（定义由 susfs.c 提供，消除 duplicate symbol）。
   for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
     for f in $(find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
       case "$f" in
@@ -395,7 +387,7 @@ KSU_KBUILD_EOF
       esac
     done
   done
-  echo "0j) ksud_integration.c 原版恢复 + static key extern 完成（input hook 保留）"
+  echo "0j) 33034: 保留 SUSFS 补丁版 ksud_integration.c + static key extern（input hook 自洽）"
 
   
   # 0j4) 为 SUSFS 引用的已移除 adb_root 符号提供桩定义（0h 已移除 adb_root 编译；input hook 原版保留，无需 ksu_syscall_table 桩）
