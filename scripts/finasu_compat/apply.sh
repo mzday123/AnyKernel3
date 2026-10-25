@@ -371,9 +371,38 @@ KSU_KBUILD_EOF
     done
   done
   echo "hook 符号已处理（函数弱化 + static key extern），链接由 SUSFS 接管"  
-  # 0j) 33034（v1.0.10）：SUSFS 补丁对 ksud_integration.c 完整应用（无 rejects），input hook 由 SUSFS 版自洽
-  #     （KSU root/syscall 机制保留在补丁版中）。不恢复原版（原版与 SUSFS 版 ksu.h 声明冲突），
-  #     仅对 input hook 两个 static key 做 extern（定义由 susfs.c 提供，消除 duplicate symbol）。
+  # 0j) SUSFS 补丁对 ksud_integration.c 部分应用会破坏 input hook（KSU root/syscall 机制）。
+  #     整体恢复 KSU 原版 ksud_integration.c + 原版 ksu.h（声明/定义自洽），
+  #     再把 input hook 两个 static key 转 extern（定义由 susfs.c 提供，消除 duplicate）。
+  BAK="$FINASU_KSU/runtime/ksud_integration.c.origbak"
+  if [ -f "$BAK" ]; then
+    cp "$BAK" "$FINASU_KSU/runtime/ksud_integration.c"
+    echo "0j) 已从备份恢复 ksud_integration.c 原版（KSU root 机制保留）"
+  else
+    echo "0j) 备份缺失，尝试 git checkout 恢复"
+    git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/runtime/ksud_integration.c 2>/dev/null || true
+  fi
+  # 恢复原版 ksu.h（SUSFS 部分应用改了 exec/input-hook 声明，与原版定义冲突）
+  git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/include/ksu.h 2>/dev/null && echo "0j) ksu.h 已恢复原版" || echo "0j) ksu.h checkout 失败（跳过）"
+  # 恢复原版 sucompat.c（SUSFS 部分应用把 exec/sulog 调用改成 fd 版签名，与原版定义冲突；0g 适配不足时整体回退最稳）
+  git -C "$KERNEL_ROOT/$KSU_DIR" checkout -- kernel/feature/sucompat.c 2>/dev/null && echo "0j) sucompat.c 已恢复原版" || echo "0j) sucompat.c checkout 失败（跳过）"
+  # 原版 ksud_integration.c 自带 struct user_arg_ptr；若 SUSFS 文件（sucompat.c 等）仍引用该类型，
+  # 确保 ksu.h 中也有定义（检查缺失则从 ksud_integration.c 复制）
+  if ! grep -q "struct user_arg_ptr" "$FINASU_KSU/include/ksu.h" 2>/dev/null; then
+    python3 - "$FINASU_KSU/runtime/ksud_integration.c" "$FINASU_KSU/include/ksu.h" << 'PYEOF'
+import sys, re
+src = open(sys.argv[1], encoding='utf-8', errors='ignore').read()
+dst = open(sys.argv[2], encoding='utf-8', errors='ignore').read()
+m = re.search(r'struct user_arg_ptr \{.*?\n\};', src, re.S)
+if m and 'struct user_arg_ptr' not in dst:
+    add = '\n' + m.group(0) + '\n'
+    dst = dst + add
+    open(sys.argv[2], 'w', encoding='utf-8').write(dst)
+    print("user_arg_ptr 定义已追加到 ksu.h")
+else:
+    print("user_arg_ptr 无需追加（已存在或无匹配）")
+PYEOF
+  fi
   for sym in ksu_is_input_hook_enabled ksu_is_init_rc_hook_enabled; do
     for f in $(find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "$sym" 2>/dev/null); do
       case "$f" in
@@ -387,7 +416,7 @@ KSU_KBUILD_EOF
       esac
     done
   done
-  echo "0j) 33034: 保留 SUSFS 补丁版 ksud_integration.c + static key extern（input hook 自洽）"
+  echo "0j) 原版 ksud_integration.c + ksu.h 恢复 + static key extern 完成"
 
   
   # 0j4) 为 SUSFS 引用的已移除 adb_root 符号提供桩定义（0h 已移除 adb_root 编译；input hook 原版保留，无需 ksu_syscall_table 桩）
