@@ -414,18 +414,16 @@ KSU_KBUILD_EOF
     sed -i '0,/ksu_sulog_capture_sucompat/{/ksu_sulog_capture_sucompat/s/^/struct user_arg_ptr;\n/}' "$EVENT_H" 2>/dev/null || true
     echo "0j5) event.h 已补 struct user_arg_ptr 全局前向声明（行首插入）"
   fi
-  # 0j6) event.c 需要 struct user_arg_ptr 完整定义（前向声明不够，round7-10：incomplete type）
-  #      struct user_arg_ptr 是内核定义（linux/binfmts.h 或 fs.h，GKI 6.12）。s/// 替换法可能被吞，
-  #      改用 sed i 命令行首插入 + 双头保险 + 输出验证计数
+  # 0j6) event.c 需要 struct user_arg_ptr 完整定义（前向声明不够，round7-11：incomplete type）
+  #      binfmts.h/fs.h 在 GKI 6.12 均无该 struct（已验证 binfmts=1 fs=1 仍 incomplete）。
+  #      sucompat.c 能编译过 = 它 include 的 FinaSU util.h 提供完整定义（FIX2 即指向 ../include/util.h）。
+  #      给 event.c 同样注入 util.h
   EVENT_C="$FINASU_KSU/sulog/event.c"
   if [ -f "$EVENT_C" ]; then
-    if ! grep -q 'linux/binfmts.h' "$EVENT_C"; then
-      sed -i '0,/^[[:space:]]*#include/i #include <linux/binfmts.h>' "$EVENT_C" 2>/dev/null || true
+    if ! grep -q 'include/util.h' "$EVENT_C"; then
+      sed -i '0,/^[[:space:]]*#include/i #include "../include/util.h"' "$EVENT_C" 2>/dev/null || true
     fi
-    if ! grep -q '<linux/fs.h>' "$EVENT_C"; then
-      sed -i '0,/^[[:space:]]*#include/i #include <linux/fs.h>' "$EVENT_C" 2>/dev/null || true
-    fi
-    echo "0j6) event.c include 注入完成 (binfmts=$(grep -c 'linux/binfmts.h' "$EVENT_C" 2>/dev/null || echo 0) fs=$(grep -c '<linux/fs.h>' "$EVENT_C" 2>/dev/null || echo 0))"
+    echo "0j6) event.c 注入 util.h 完成 (util=$(grep -c 'include/util.h' "$EVENT_C" 2>/dev/null || echo 0) binfmts=$(grep -c 'linux/binfmts.h' "$EVENT_C" 2>/dev/null || echo 0))"
   fi
 
   
