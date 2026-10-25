@@ -367,28 +367,65 @@ KSU_KBUILD_EOF
   done
   echo "hook 符号已弱化（KSU 侧），链接由 SUSFS 接管"
 
-  # 0j) SUSFS 补丁部分应用破坏了 FinaSU input hook 代码块（引用被删除的定义，编译报 undeclared）
-  #     禁用该区域（input hook 对正常使用无影响；safe_mode 中的调用一并移除）
+  
+  
+  # 0j) SUSFS 补丁部分应用破坏了 FinaSU input hook 代码块（定义被删/引用残留，编译报 undeclared）
+  #     先 dump 实际结构到日志，再按 fallback 链鲁棒删除整个 input hook 区域
+  echo "=== INPUT HOOK DUMP (ksud_integration.c 530-670) ==="
+  sed -n '530,670p' "$FINASU_KSU/runtime/ksud_integration.c"
+  echo "=== END DUMP ==="
   python3 - "$FINASU_KSU/runtime/ksud_integration.c" << 'PYEOF'
-import sys
+import sys, re
 p = sys.argv[1]
 s = open(p, encoding='utf-8', errors='ignore').read()
-start = s.find("static long (*orig_sys_read)")
+orig = s
+starts = [
+    "static long (*orig_sys_read)",
+    "static long (*orig_sys_fstat)",
+    "static long ksu_sys_read(",
+    "static int ksu_sys_read(",
+    "static long ksu_sys_fstat(",
+    "static int ksu_sys_fstat(",
+]
+start = -1
+for m in starts:
+    idx = s.find(m)
+    if idx != -1:
+        start = idx
+        break
 end_marker = "void ksu_stop_input_hook_runtime(void)"
 end = s.find(end_marker)
 if start != -1 and end != -1 and start < end:
-    body_end = s.find("\n}\n", s.find("{", end))
+    brace = s.find("{", end)
+    depth = 0
+    i = brace
+    body_end = -1
+    while i < len(s):
+        if s[i] == "{": depth += 1
+        elif s[i] == "}":
+            depth -= 1
+            if depth == 0:
+                body_end = i + 1
+                break
+        i += 1
     if body_end != -1:
-        s = s[:start] + "/* FinaSU input hook disabled: conflicts with SUSFS partial patch */\n" + s[body_end+3:]
-        s = s.replace("    // stop hook first!\n    ksu_stop_input_hook_runtime();\n", "")
+        s = s[:start] + "/* FinaSU input hook disabled (SUSFS partial patch) */\n" + s[body_end:]
+        s = s.replace("ksu_stop_input_hook_runtime();", "/* ksu_stop_input_hook_runtime(); */")
+        for pat in [r'^\s*ksu_syscall_table_hook\(__NR_read[^\n]*\n?',
+                    r'^\s*ksu_syscall_table_hook\(__NR_fstat[^\n]*\n?',
+                    r'^\s*register_kprobe\([^\n]*\n?',
+                    r'^\s*INIT_WORK\(&stop_input_hook_work[^\n]*\n?',
+                    r'^\s*unregister_kprobe\([^\n]*\n?',
+                    r'^\s*ret = register_kprobe[^\n]*\n?',
+                    r'^\s*(?:int|bool) ret = schedule_work[^\n]*\n?']:
+            s = re.sub(pat, '', s, flags=re.M)
         open(p, 'w', encoding='utf-8').write(s)
-        print("input hook block disabled (start=%d body_end=%d)" % (start, body_end))
+        print("INPUT HOOK DISABLED start=%d body_end=%d removed=%d" % (start, body_end, len(orig)-len(s)))
     else:
-        print("WARN: body end not found")
+        print("WARN: brace mismatch")
 else:
     print("WARN: markers not found (start=%d end=%d)" % (start, end))
 PYEOF
-
   
   # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
   true
