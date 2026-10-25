@@ -370,8 +370,9 @@ KSU_KBUILD_EOF
   
   
   
+  
   # 0j) SUSFS 补丁部分应用破坏了 FinaSU input hook 代码块（定义被删/引用残留，编译报 undeclared）
-  #     按 fallback 链鲁棒删除整个 input hook 区域（ksu_handle_vfs_fstat → ksu_stop_input_hook_runtime）
+  #     按 fallback 链鲁棒删除整个 input hook 区域（ksu_handle_vfs_fstat 行首 → ksu_stop_input_hook_runtime 函数体结束）
   python3 - "$FINASU_KSU/runtime/ksud_integration.c" << 'PYEOF'
 import sys, re
 p = sys.argv[1]
@@ -393,6 +394,8 @@ for m in starts:
 end_marker = "void ksu_stop_input_hook_runtime(void)"
 end = s.find(end_marker)
 if start != -1 and end != -1 and start < end:
+    # 前移到行首，删除完整函数签名行（避免残留 void __weak 前缀）
+    start = s.rfind("\n", 0, start) + 1
     brace = s.find("{", end)
     depth = 0
     i = brace
@@ -422,8 +425,7 @@ if start != -1 and end != -1 and start < end:
         print("WARN: brace mismatch")
 else:
     print("WARN: markers not found (start=%d end=%d)" % (start, end))
-PYEOF
-  # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
+PYEOF  # 结果校验（放宽：FinaSU v1.0.7 代码形态漂移，交由编译阶段验证，不再拦截）
   true
   if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
     echo "::error::FinaSU selinux_hide.c 的 security_*_with_policy 仍未全局化（6.6 会链接失败）" >&2
