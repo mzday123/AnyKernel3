@@ -464,18 +464,15 @@ PYEOF
   sed -i "s|^[ \t]*DEFINE_STATIC_KEY_FALSE(ksu_is_init_rc_hook_enabled);\?|extern struct static_key_false ksu_is_init_rc_hook_enabled;|" "$FINASU_KSU/extension/susfs.c" 2>/dev/null
   echo "susfs.c static key 定义转 extern（KSU 侧提供定义）"
 
-  # 0j4) SUSFS 侧引用已移除/禁用的 KSU 符号（ksu_syscall_table/ksu_adb_root_*）→ 删除引用行
-  for f in $(find "$(dirname "$FINASU_KSU")" \( -name "*.c" -o -name "*.h" \) -type f 2>/dev/null | xargs grep -l "ksu_syscall_table\|ksu_adb_root_init\|ksu_adb_root_exit" 2>/dev/null); do
-    case "$f" in
-      *kernel/runtime/ksud_integration.c) echo "skip ksud_integration.c: $f" ;;
-      *)
-        sed -i "/ksu_syscall_table/d" "$f" 2>/dev/null
-        sed -i "/ksu_adb_root_init/d" "$f" 2>/dev/null
-        sed -i "/ksu_adb_root_exit/d" "$f" 2>/dev/null
-        ;;
-    esac
-  done
-  echo "SUSFS 侧 ksu_syscall_table/ksu_adb_root_* 引用已清理"
+  # 0j4) 为 SUSFS 引用的已移除 KSU 符号提供桩定义（input hook/adb root 已禁用，桩实现保证链接，不删除引用行以免破坏语法）
+  SUSFS_FILE="$FINASU_KSU/extension/susfs.c"
+  if ! grep -q "void \*ksu_syscall_table\[" "$SUSFS_FILE"; then
+    printf '\nvoid *ksu_syscall_table[1024] = { 0 };\n' >> "$SUSFS_FILE"
+  fi
+  if ! grep -q "int ksu_adb_root_init" "$SUSFS_FILE"; then
+    printf '\nint ksu_adb_root_init(void) { return 0; }\nvoid ksu_adb_root_exit(void) { }\n' >> "$SUSFS_FILE"
+  fi
+  echo "SUSFS 引用符号桩定义已追加"
   if grep -qE '^static (int|void) (__nocfi )?security_(context_to_sid_with_policy|sid_to_context_with_policy|compute_av_user_with_policy)' "$FINASU_SELINUX_HIDE"; then
     echo "::error::FinaSU selinux_hide.c 的 security_*_with_policy 仍未全局化（6.6 会链接失败）" >&2
     exit 1
